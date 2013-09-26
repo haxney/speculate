@@ -7,16 +7,6 @@ use std::task;
 use cssparser::*;
 use extra::time::precise_time_ns;
 
-fn print_res(res: Result<Rule,SyntaxError>) -> ~str {
-    match res {
-        Ok(rule) => match rule {
-            QualifiedRule(qr) => qr.location.line.to_str(),
-            AtRule(ar) => ar.location.line.to_str(),
-        },
-        Err(e) => e.to_str(),
-    }
-}
-
 fn bench(inner: &fn()) -> u64 {
     let ns_start = precise_time_ns();
     inner();
@@ -30,11 +20,10 @@ fn bench_lex_one_file(path: &Path) -> Result<u64, ()> {
     do task::try {
         let my_path = &p.clone();
         let reader = file_reader(my_path).unwrap();
+        let css = reader.read_c_str();
         do bench {
-            let mut a = parse_stylesheet_rules(tokenize(reader.read_c_str()));
-            for res in a {
-                print_res(res);
-            }
+            let mut a = parse_stylesheet_rules(tokenize(css));
+            for _ in a {}
         }
     }
 }
@@ -45,8 +34,9 @@ fn bench_parse_one_file(path: &Path) -> Result<u64, ()> {
     do task::try {
         let my_path = &p.clone();
         let reader = file_reader(my_path).unwrap();
+        let css = reader.read_c_str();
         do bench {
-            servo_style::stylesheets::parse_stylesheet(reader.read_c_str());
+            servo_style::stylesheets::parse_stylesheet(css);
         }
     }
 }
@@ -60,9 +50,10 @@ fn main() {
         let parse_time = bench_parse_one_file(file);
         match (lex_time, parse_time) {
             (Ok(l), Ok(p)) =>
-                println(format!("{}:\tlex: {:.4f} ms\tparse: {:.4f} ms",
+                println(format!("{}:\tlex: {:.4f} ms\tparse: {:.4f} ms\tdiff: {:.4f} ms",
                                 file.filename().unwrap(),
                                 l as float / 1_000_000f,
+                                p as float / 1_000_000f,
                                 (p - l) as float / 1_000_000f)),
             _ => println(format!("{}: ERROR", file.filename().unwrap())),
         }
