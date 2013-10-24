@@ -8,19 +8,19 @@ use std::num;
 /**
  * Speculatively execute consumer using the guessed value.
  */
-pub fn spec<A: Eq + Send, B>(producer: ~fn() -> A,
-                             predictor: ~fn() -> A,
-                             consumer:  ~fn(x: &A) -> B) -> B {
+pub fn spec<A: Eq + Send + Clone, B>(producer: ~fn() -> A,
+                                     predictor: ~fn() -> A,
+                                     consumer:  ~fn(A) -> B) -> B {
 
     let producer_result = Future::spawn(producer);
     let prediction = predictor();
-    let speculative_result = consumer(&prediction);
+    let speculative_result = consumer(prediction.clone());
     let real_value = producer_result.unwrap();
 
     if real_value == prediction {
         speculative_result
     } else {
-        consumer(&real_value)
+        consumer(real_value)
     }
 }
 

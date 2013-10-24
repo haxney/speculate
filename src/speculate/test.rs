@@ -7,8 +7,8 @@ use speculate::*;
 
 #[test]
 fn test_spec() {
-    assert!(spec(|| 2 + 2, || 4, |x:&int| x + 2) == 6);
-    assert!(spec(|| 2 + 2, || 1, |x:&int| x + 2) == 6);
+    assert!(spec(|| 2 + 2, || 4, |x| x + 2) == 6);
+    assert!(spec(|| 2 + 2, || 1, |x| x + 2) == 6);
 }
 
 fn spawn_result_collector<T: Send + Default + Clone>(port: SharedPort<Option<(int, T)>>, chan: Chan<~[T]>, size: uint) {
