@@ -25,24 +25,22 @@ pub fn spec<A: Eq + Send, B>(producer: ~fn() -> A,
 }
 
 /**
- * Iteratively execute `loopBody` by guessing a value.
+ * Iteratively execute `loop_body` by guessing a value.
  *
  * the &fn() would close over the Arc, and then it would .clone it for each new
  * ~fn
  */
 pub fn specfold<A: Eq + Clone + Send>(low: int, high: int,
-                                      loopBody: &fn() -> ~fn(int, &A) -> A,
+                                      loop_body: &fn() -> ~fn(int, A) -> A,
                                       predictor: &fn() -> ~fn(int) -> A) {
 
     let len = num::abs(high - low) as uint;
     // The future is (prediction, result)
-    let mut results: ~[Future<(~A, ~A)>] = std::vec::with_capacity(len);
+    let mut results: ~[Future<(A, A)>] = std::vec::with_capacity(len);
     for i in range(low, high) {
-
-
-        let fut = do Future::spawn_with((predictor(), loopBody())) |(p,l)| {
-            let prediction = ~p(i);
-            let res = ~l(i, prediction);
+        let fut = do Future::spawn_with((predictor(), loop_body())) |(p,l)| {
+            let prediction = p(i);
+            let res = l(i, prediction.clone());
             (prediction, res)
         };
         results.push(fut);
@@ -53,7 +51,7 @@ pub fn specfold<A: Eq + Clone + Send>(low: int, high: int,
         let (_, previous) = results[(i - low) - 1].get();
         let (prediction, _) = results[i - low].get();
         if previous != prediction {
-            let res = ~loopBody()(i, previous);
+            let res = loop_body()(i, previous.clone());
             results[i - low] = Future::from_value((previous, res));
         }
     }
