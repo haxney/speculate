@@ -173,9 +173,9 @@ fn next_token(tokenizer: &mut Tokenizer) -> Option<Token> {
             } else { tokenizer.position += 1; Delim(c) }
         },
         '+' => {
-            if (tokenizer.position + 1 < tokenizer.length
+            if (tokenizer.has_more(1)
                 && is_match!(tokenizer.char_at(1), '0'..'9')
-                ) || (tokenizer.position + 2 < tokenizer.length
+                ) || (tokenizer.has_more(2)
                       && tokenizer.char_at(1) == '.'
                       && is_match!(tokenizer.char_at(2), '0'..'9')
                       ) {
@@ -188,10 +188,10 @@ fn next_token(tokenizer: &mut Tokenizer) -> Option<Token> {
         ',' => { tokenizer.position += 1; Comma },
         '-' => {
             if (
-                tokenizer.position + 1 < tokenizer.length
+                tokenizer.has_more(1)
                     && is_match!(tokenizer.char_at(1), '0'..'9')
                     ) || (
-                tokenizer.position + 2 < tokenizer.length
+                tokenizer.has_more(2)
                     && tokenizer.char_at(1) == '.'
                     && is_match!(tokenizer.char_at(2), '0'..'9')
                     ) {
@@ -207,7 +207,7 @@ fn next_token(tokenizer: &mut Tokenizer) -> Option<Token> {
             }
         },
         '.' => {
-            if tokenizer.position + 1 < tokenizer.length
+            if tokenizer.has_more(1)
                 && is_match!(tokenizer.char_at(1), '0'..'9') {
                 consume_numeric(tokenizer)
             } else {
@@ -233,7 +233,7 @@ fn next_token(tokenizer: &mut Tokenizer) -> Option<Token> {
                 else { Delim(c) }
         },
         'u' | 'U' => {
-            if tokenizer.position + 2 < tokenizer.length
+            if tokenizer.has_more(2)
                 && tokenizer.char_at(1) == '+'
                 && is_match!(tokenizer.char_at(2), '0'..'9' | 'a'..'f' | 'A'..'F' | '?')
                 { consume_unicode_range(tokenizer) }
@@ -366,7 +366,7 @@ fn consume_quoted_string(tokenizer: &mut Tokenizer, single_quote: bool) -> Optio
 fn is_ident_start(tokenizer: &mut Tokenizer) -> bool {
     !tokenizer.is_eof() && match tokenizer.current_char() {
         'a'..'z' | 'A'..'Z' | '_' => true,
-        '-' => tokenizer.position + 1 < tokenizer.length && match tokenizer.char_at(1) {
+        '-' => tokenizer.has_more(1) && match tokenizer.char_at(1) {
             'a'..'z' | 'A'..'Z' | '_' => true,
             '\\' => !tokenizer.input.slice_from(tokenizer.position + 1).starts_with("\\\n"),
             c => c > '\x7F',  // Non-ASCII
@@ -420,7 +420,7 @@ fn consume_numeric(tokenizer: &mut Tokenizer) -> ComponentValue {
             _ => break
         }
     }
-    if tokenizer.position + 1 < tokenizer.length && tokenizer.current_char() == '.'
+    if tokenizer.has_more(1) && tokenizer.current_char() == '.'
             && is_match!(tokenizer.char_at(1), '0'..'9') {
         is_integer = false;
         representation.push_char(tokenizer.consume_char());  // '.'
@@ -433,11 +433,11 @@ fn consume_numeric(tokenizer: &mut Tokenizer) -> ComponentValue {
         }
     }
     if (
-        tokenizer.position + 1 < tokenizer.length
+        tokenizer.has_more(1)
         && is_match!(tokenizer.current_char(), 'e' | 'E')
         && is_match!(tokenizer.char_at(1), '0'..'9')
     ) || (
-        tokenizer.position + 2 < tokenizer.length
+        tokenizer.has_more(2)
         && is_match!(tokenizer.current_char(), 'e' | 'E')
         && is_match!(tokenizer.char_at(1), '+' | '-')
         && is_match!(tokenizer.char_at(2), '0'..'9')
