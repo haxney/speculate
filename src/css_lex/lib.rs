@@ -9,23 +9,6 @@ pub struct NumericValue {
     int_value: Option<i64>,
 }
 
-pub enum LexState {
-    StartState,
-    DqStringState,
-    MaybeHashState,
-    MaybeSuffixMatchState,
-    SqStringState,
-    MaybeSubstringMatchState,
-    MaybeNumberState,
-    FirstHyphenState,
-    MaybeCommentState,
-    MaybeCdoState,
-    MaybeAtState,
-    MaybeEscapeState,
-    MaybePrefixMatchState,
-
-}
-
 #[deriving(Eq)]
 pub struct SourceLocation {
     line: uint,  // First line is 1
