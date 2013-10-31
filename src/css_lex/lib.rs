@@ -46,8 +46,8 @@ pub enum Token {
     RightBracket,
     LeftParen,
     RightParen,
-    LeftBrace,
-    RightBrace,
+    LeftCurlyBracket,
+    RightCurlyBracket,
 }
 
 pub type Node = (Token, SourceLocation);
@@ -100,6 +100,24 @@ impl Tokenizer {
     fn has_more(&self, num: uint) -> bool { self.position + num < self.length }
 }
 
+pub fn tokenize(input: &str) -> Tokenizer {
+    let input = preprocess(input);
+    Tokenizer {
+        length: input.len(),
+        input: input,
+        position: 0,
+        line: 1,
+        last_line_start: 0,
+    }
+}
+
+// From http://dev.w3.org/csswg/css-syntax/#input-preprocessing
+#[inline]
+fn preprocess(input: &str) -> ~str {
+    // TODO: Is this faster if done in one pass?
+    input.replace("\r\n", "\n").replace("\r", "\n").replace("\x0C", "\n").replace("\x00", "\uFFFD")
+}
+
 macro_rules! is_match(
     ($value:expr, $($pattern:pat)|+) => (
         match $value { $($pattern)|+ => true, _ => false }
@@ -107,7 +125,8 @@ macro_rules! is_match(
 )
 
 // From http://dev.w3.org/csswg/css-syntax/#consume-a-token
-fn next_token(tokenizer: &mut Tokenizer) -> Option<Token> {
+fn next_token(tokenizer: &mut Tokenizer) -> Option<Node> {
+    consume_comments(tokenizer);
     if tokenizer.is_eof() {
         return None
     }
@@ -131,7 +150,7 @@ fn next_token(tokenizer: &mut Tokenizer) -> Option<Token> {
             }
             WhiteSpace
         },
-        "\"" => consume_string(tokenizer, false),
+        '\"' => consume_string(tokenizer, false),
         '#' => {
             tokenizer.position += 1;
             if is_ident_start(tokenizer) { IDHash(consume_name(tokenizer)) }
@@ -146,9 +165,9 @@ fn next_token(tokenizer: &mut Tokenizer) -> Option<Token> {
             if tokenizer.starts_with("$=") { tokenizer.position += 2; SuffixMatch }
                 else { tokenizer.position += 1; Delim(c) }
         },
-        "'" => consume_string(tokenizer, true),
-        "(" => { tokenizer.position += 1; LeftParen },
-        ")" => { tokenizer.position += 1; RightParen },
+        '\'' => consume_string(tokenizer, true),
+        '\x28' => { tokenizer.position += 1; LeftParen },
+        '\x29' => { tokenizer.position += 1; RightParen },
         '*' => {
             if tokenizer.starts_with("*=") {
                 tokenizer.position += 2;
@@ -170,14 +189,11 @@ fn next_token(tokenizer: &mut Tokenizer) -> Option<Token> {
         },
         ',' => { tokenizer.position += 1; Comma },
         '-' => {
-            if (
-                tokenizer.has_more(1)
-                    && is_match!(tokenizer.char_at(1), '0'..'9')
-                    ) || (
-                tokenizer.has_more(2)
+            if (tokenizer.has_more(1)
+                && is_match!(tokenizer.char_at(1), '0'..'9'))
+                || (tokenizer.has_more(2)
                     && tokenizer.char_at(1) == '.'
-                    && is_match!(tokenizer.char_at(2), '0'..'9')
-                    ) {
+                    && is_match!(tokenizer.char_at(2), '0'..'9')) {
                 consume_numeric(tokenizer)
             } else if is_ident_start(tokenizer) {
                 consume_ident_like(tokenizer)
@@ -197,8 +213,11 @@ fn next_token(tokenizer: &mut Tokenizer) -> Option<Token> {
                 tokenizer.position += 1;
                 Delim(c)
             }
-        }
-        '0'..'9' => consume_numeric(tokenizer),
+        },
+
+        // Handling of '/' would occur here, but comments are handled by
+        // `consume_comments()` above
+
         ':' => { tokenizer.position += 1; Colon },
         ';' => { tokenizer.position += 1; Semicolon },
         '<' => {
@@ -215,47 +234,51 @@ fn next_token(tokenizer: &mut Tokenizer) -> Option<Token> {
             if is_ident_start(tokenizer) { AtKeyword(consume_name(tokenizer)) }
                 else { Delim(c) }
         },
-        'u' | 'U' => {
-            if tokenizer.has_more(2)
-                && tokenizer.char_at(1) == '+'
-                && is_match!(tokenizer.char_at(2), '0'..'9' | 'a'..'f' | 'A'..'F' | '?')
-                { consume_unicode_range(tokenizer) }
-                else { consume_ident_like(tokenizer) }
+        '[' => { tokenizer.position += 1; LeftBracket },
+        '\\' => {
+            if !tokenizer.starts_with("\\\n") { consume_ident_like(tokenizer) }
+                else { tokenizer.position += 1; Delim(c) }
         },
-        'a'..'z' | 'A'..'Z' | '_' => consume_ident_like(tokenizer),
-        '[' => SquareBracketBlock(consume_block(tokenizer, CloseSquareBracket)),
-          '\\' => {
-                if !tokenizer.starts_with("\\\n") { consume_ident_like(tokenizer) }
-                    else { tokenizer.position += 1; Delim(c) }
-            },
-          ']' => { tokenizer.position += 1; CloseSquareBracket },
+        ']' => { tokenizer.position += 1; RightBracket },
         '^' => {
             if tokenizer.starts_with("^=") { tokenizer.position += 2; PrefixMatch }
                 else { tokenizer.position += 1; Delim(c) }
         },
-        '{' => CurlyBracketBlock(consume_block_with_location(tokenizer, CloseCurlyBracket)),
-          '|' => {
-                if tokenizer.starts_with("|=") { tokenizer.position += 2; DashMatch }
-                    else if tokenizer.starts_with("||") { tokenizer.position += 2; Column }
-                    else { tokenizer.position += 1; Delim(c) }
-            },
-          '}' => { tokenizer.position += 1; CloseCurlyBracket },
+        '\x7b' => { tokenizer.position += 1; LeftCurlyBracket },
+        '\x7d' => { tokenizer.position += 1; RightCurlyBracket },
+        '0'..'9' => consume_numeric(tokenizer),
+
+        'u' | 'U' => {
+            if tokenizer.has_more(2)
+                && tokenizer.char_at(1) == '+'
+                && is_match!(tokenizer.char_at(2), '0'..'9' | 'a'..'f' | 'A'..'F' | '?')
+                { tokenizer.position += 2;
+                  consume_unicode_range(tokenizer)
+            } else { consume_ident_like(tokenizer) }
+        },
+        // Non-ASCII name-start code points are handled below
+        'a'..'z' | 'A'..'Z' | '_' => consume_ident_like(tokenizer),
+
+        '|' => {
+            if tokenizer.starts_with("|=") { tokenizer.position += 2; DashMatch }
+                else if tokenizer.starts_with("||") { tokenizer.position += 2; Column }
+                else { tokenizer.position += 1; Delim(c) }
+        },
+
         '~' => {
             if tokenizer.starts_with("~=") { tokenizer.position += 2; IncludeMatch }
                 else { tokenizer.position += 1; Delim(c) }
         },
+        // Non-ASCII
+        _ if c > '\x7F' => consume_ident_like(tokenizer),
+
         _ => {
-            if c > '\x7F' {  // Non-ASCII
-                consume_ident_like(tokenizer)
-            } else {
-                tokenizer.position += 1;
-                Delim(c)
-            }
+            tokenizer.position += 1;
+            Delim(c)
         },
     };
     Some((token, start_location))
 }
-
 
 #[inline]
 fn consume_comments(tokenizer: &mut Tokenizer) {
@@ -274,38 +297,6 @@ fn consume_comments(tokenizer: &mut Tokenizer) {
             }
         }
     }
-}
-
-
-fn consume_block(tokenizer: &mut Tokenizer, ending_token: ComponentValue) -> ~[ComponentValue] {
-    tokenizer.position += 1;  // Skip the initial {[(
-    let mut content = ~[];
-    loop {
-        match next_component_value(tokenizer) {
-            Some((component_value, _location)) => {
-                if component_value == ending_token { break }
-                else { content.push(component_value) }
-            },
-            None => break,
-        }
-    }
-    content
-}
-
-
-fn consume_block_with_location(tokenizer: &mut Tokenizer, ending_token: ComponentValue) -> ~[Node] {
-    tokenizer.position += 1;  // Skip the initial {[(
-    let mut content = ~[];
-    loop {
-        match next_component_value(tokenizer) {
-            Some((component_value, location)) => {
-                if component_value == ending_token { break }
-                else { content.push((component_value, location)) }
-            },
-            None => break,
-        }
-    }
-    content
 }
 
 // From http://dev.w3.org/csswg/css-syntax/#consume-a-string-token0
@@ -334,7 +325,7 @@ fn consume_quoted_string(tokenizer: &mut Tokenizer, single_quote: bool) -> Optio
                         tokenizer.position += 1;
                         tokenizer.new_line();
                     }
-                    else { string.push_char(consume_escape(tokenizer)) }
+                        else { string.push_char(consume_escape(tokenizer)) }
                 }
                 // else: escaped EOF, do nothing.
             }
@@ -359,43 +350,48 @@ fn is_ident_start(tokenizer: &mut Tokenizer) -> bool {
     }
 }
 
-
-fn consume_ident_like(tokenizer: &mut Tokenizer) -> ComponentValue {
+// Consume an identifier-like token.
+//
+// From http://dev.w3.org/csswg/css-syntax/#consume-an-ident-like-token
+fn consume_ident_like(tokenizer: &mut Tokenizer) -> Token {
     let value = consume_name(tokenizer);
-    if !tokenizer.is_eof() && tokenizer.current_char() == '(' {
+    if !tokenizer.is_eof() && tokenizer.current_char() == '\x28' { // \x28 == (
+        tokenizer.position += 1;
         if value.eq_ignore_ascii_case("url") { consume_url(tokenizer) }
-        else { Function(value, consume_block(tokenizer, CloseParenthesis)) }
+            else {  Function(value) }
     } else {
         Ident(value)
     }
 }
 
+// Consume a name
+//
+// From http://dev.w3.org/csswg/css-syntax/#consume-a-name
 fn consume_name(tokenizer: &mut Tokenizer) -> ~str {
     let mut value = ~"";
     while !tokenizer.is_eof() {
         let c = tokenizer.current_char();
         value.push_char(match c {
-            'a'..'z' | 'A'..'Z' | '0'..'9' | '_' | '-'  => { tokenizer.position += 1; c },
-            '\\' => {
-                if tokenizer.starts_with("\\\n") { break }
-                tokenizer.position += 1;
-                consume_escape(tokenizer)
-            },
-            _ => if c > '\x7F' { tokenizer.consume_char() }  // Non-ASCII
-                 else { break }
-        })
+                'a'..'z' | 'A'..'Z' | '0'..'9' | '_' | '-'  => { tokenizer.position += 1; c },
+                '\\' => {
+                    if tokenizer.starts_with("\\\n") { break }
+                    tokenizer.position += 1;
+                    consume_escape(tokenizer)
+                },
+                _ => if c > '\x7F' { tokenizer.consume_char() }  // Non-ASCII
+                    else { break }
+            })
     }
     value
 }
 
-
-fn consume_numeric(tokenizer: &mut Tokenizer) -> ComponentValue {
+fn consume_numeric(tokenizer: &mut Tokenizer) -> Token {
     // Parse [+-]?\d*(\.\d+)?([eE][+-]?\d+)?
     // But this is always called so that there is at least one digit in \d*(\.\d+)?
     let mut representation = ~"";
     let mut is_integer = true;
     if is_match!(tokenizer.current_char(), '-' | '+') {
-         representation.push_char(tokenizer.consume_char())
+        representation.push_char(tokenizer.consume_char())
     }
     while !tokenizer.is_eof() {
         match tokenizer.current_char() {
@@ -404,7 +400,7 @@ fn consume_numeric(tokenizer: &mut Tokenizer) -> ComponentValue {
         }
     }
     if tokenizer.has_more(1) && tokenizer.current_char() == '.'
-            && is_match!(tokenizer.char_at(1), '0'..'9') {
+        && is_match!(tokenizer.char_at(1), '0'..'9') {
         is_integer = false;
         representation.push_char(tokenizer.consume_char());  // '.'
         representation.push_char(tokenizer.consume_char());  // digit
@@ -417,14 +413,14 @@ fn consume_numeric(tokenizer: &mut Tokenizer) -> ComponentValue {
     }
     if (
         tokenizer.has_more(1)
-        && is_match!(tokenizer.current_char(), 'e' | 'E')
-        && is_match!(tokenizer.char_at(1), '0'..'9')
-    ) || (
+            && is_match!(tokenizer.current_char(), 'e' | 'E')
+            && is_match!(tokenizer.char_at(1), '0'..'9')
+            ) || (
         tokenizer.has_more(2)
-        && is_match!(tokenizer.current_char(), 'e' | 'E')
-        && is_match!(tokenizer.char_at(1), '+' | '-')
-        && is_match!(tokenizer.char_at(2), '0'..'9')
-    ) {
+            && is_match!(tokenizer.current_char(), 'e' | 'E')
+            && is_match!(tokenizer.char_at(1), '+' | '-')
+            && is_match!(tokenizer.char_at(2), '0'..'9')
+            ) {
         is_integer = false;
         representation.push_char(tokenizer.consume_char());  // 'e' or 'E'
         representation.push_char(tokenizer.consume_char());  // sign or digit
@@ -440,13 +436,13 @@ fn consume_numeric(tokenizer: &mut Tokenizer) -> ComponentValue {
     // TODO: handle overflow
     let value = NumericValue {
         int_value: if is_integer { Some(
-            // Remove any + sign as int::from_str() does not parse them.
-            if representation[0] != '+' as u8 {
-                from_str(representation)
-            } else {
-                from_str(representation.slice_from(1))
-            }.unwrap()
-        )} else { None },
+                // Remove any + sign as int::from_str() does not parse them.
+                if representation[0] != '+' as u8 {
+                    from_str(representation)
+                } else {
+                    from_str(representation.slice_from(1))
+                }.unwrap()
+                    )} else { None },
         value: from_str(representation).unwrap(),
         representation: representation,
     };
@@ -454,32 +450,37 @@ fn consume_numeric(tokenizer: &mut Tokenizer) -> ComponentValue {
         tokenizer.position += 1;
         Percentage(value)
     }
-    else if is_ident_start(tokenizer) { Dimension(value, consume_name(tokenizer)) }
-    else { Number(value) }
+        else if is_ident_start(tokenizer) { Dimension(value, consume_name(tokenizer)) }
+        else { Number(value) }
 }
 
 
-fn consume_url(tokenizer: &mut Tokenizer) -> ComponentValue {
-    tokenizer.position += 1;  // Skip the ( of url(
+// Consume a URL. Assumes that the initial "url(" has already been consumed
+//
+// From http://dev.w3.org/csswg/css-syntax/#consume-a-url-token0
+fn consume_url(tokenizer: &mut Tokenizer) -> Token {
     while !tokenizer.is_eof() {
         match tokenizer.current_char() {
-            '\t' | '\n' | ' ' => tokenizer.position += 1,
+            '\t' | ' ' => tokenizer.position += 1,
+            '\n' => { tokenizer.position += 1;
+                        tokenizer.new_line(); },
             "\"" => return consume_quoted_url(tokenizer, false),
             '\'' => return consume_quoted_url(tokenizer, true),
-            ')' => { tokenizer.position += 1; break },
+            // '\x29' == ')'
+            '\x29' => { tokenizer.position += 1; break },
             _ => return consume_unquoted_url(tokenizer),
         }
     }
     return URL(~"");
 
-    fn consume_quoted_url(tokenizer: &mut Tokenizer, single_quote: bool) -> ComponentValue {
+    fn consume_quoted_url(tokenizer: &mut Tokenizer, single_quote: bool) -> Token {
         match consume_quoted_string(tokenizer, single_quote) {
             Some(value) => consume_url_end(tokenizer, value),
             None => consume_bad_url(tokenizer),
         }
     }
 
-    fn consume_unquoted_url(tokenizer: &mut Tokenizer) -> ComponentValue {
+    fn consume_unquoted_url(tokenizer: &mut Tokenizer) -> Token {
         let mut string = ~"";
         while !tokenizer.is_eof() {
             let next_char = match tokenizer.consume_char() {
@@ -488,9 +489,10 @@ fn consume_url(tokenizer: &mut Tokenizer) -> ComponentValue {
                     tokenizer.new_line();
                     return consume_url_end(tokenizer, string)
                 },
-                ')' => break,
+                // '\x29' == ')'
+                '\x29' => break,
                 '\x00'..'\x08' | '\x0B' | '\x0E'..'\x1F' | '\x7F'  // non-printable
-                    | "\"" | '\'' | '(' => return consume_bad_url(tokenizer),
+                    | "\"" | '\'' | '\x28' => return consume_bad_url(tokenizer),
                 '\\' => {
                     if !tokenizer.is_eof() && tokenizer.current_char() == '\n' {
                         return consume_bad_url(tokenizer)
@@ -504,23 +506,23 @@ fn consume_url(tokenizer: &mut Tokenizer) -> ComponentValue {
         URL(string)
     }
 
-    fn consume_url_end(tokenizer: &mut Tokenizer, string: ~str) -> ComponentValue {
+    fn consume_url_end(tokenizer: &mut Tokenizer, string: ~str) -> Token {
         while !tokenizer.is_eof() {
             match tokenizer.consume_char() {
                 ' ' | '\t' => (),
                 '\n' => tokenizer.new_line(),
-                ')' => break,
+                '\x29' => break,
                 _ => return consume_bad_url(tokenizer)
             }
         }
         URL(string)
     }
 
-    fn consume_bad_url(tokenizer: &mut Tokenizer) -> ComponentValue {
+    fn consume_bad_url(tokenizer: &mut Tokenizer) -> Token {
         // Consume up to the closing )
         while !tokenizer.is_eof() {
             match tokenizer.consume_char() {
-                ')' => break,
+                '\x29' => break,
                 '\\' => tokenizer.position += 1, // Skip an escaped ')' or '\'
                 '\n' => tokenizer.new_line(),
                 _ => ()
@@ -530,19 +532,19 @@ fn consume_url(tokenizer: &mut Tokenizer) -> ComponentValue {
     }
 }
 
-
-
-fn consume_unicode_range(tokenizer: &mut Tokenizer) -> ComponentValue {
-    tokenizer.position += 2;  // Skip U+
+// Assumes the initial "u+" has already been consumed
+//
+// From http://dev.w3.org/csswg/css-syntax/#consume-a-unicode-range-token0
+fn consume_unicode_range(tokenizer: &mut Tokenizer) -> Token {
     let mut hex = ~"";
     while hex.len() < 6 && !tokenizer.is_eof()
-          && is_match!(tokenizer.current_char(), '0'..'9' | 'A'..'F' | 'a'..'f') {
+        && is_match!(tokenizer.current_char(), '0'..'9' | 'A'..'F' | 'a'..'f') {
         hex.push_char(tokenizer.consume_char());
     }
     let max_question_marks = 6u - hex.len();
     let mut question_marks = 0u;
     while question_marks < max_question_marks && !tokenizer.is_eof()
-            && tokenizer.current_char() == '?' {
+        && tokenizer.current_char() == '?' {
         question_marks += 1;
         tokenizer.position += 1
     }
