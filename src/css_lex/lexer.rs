@@ -52,13 +52,13 @@ pub enum Token {
 
 pub type Node = (Token, SourceLocation);
 
-struct Tokenizer {
+pub struct Tokenizer {
     // Won't be able to be an owned pointer, since will be shared across tasks
-    priv input: ~str,
-    priv length: uint,
-    priv position: uint,
-    priv line: uint,
-    priv last_line_start: uint,
+    input: ~str,
+    length: uint,
+    position: uint,
+    line: uint,
+    last_line_start: uint,
 }
 
 impl Tokenizer {
