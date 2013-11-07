@@ -42,14 +42,6 @@ fn run_json_tests<T: ToJson>(json_data: &str, parse: &fn (input: ~str) -> T) {
     }
 }
 
-fn list_to_json(list: &~[(Token, SourceLocation)]) -> ~[json::Json] {
-    list.map(|tuple| {
-        match *tuple {
-            (ref c, _) => c.to_json()
-        }
-    })
-}
-
 #[test]
 fn tokenize_simple() {
     let mut t = tokenize("a");

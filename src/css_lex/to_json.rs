@@ -71,3 +71,11 @@ impl ToJson for Token {
         }
     }
 }
+
+pub fn list_to_json(list: &~[(Token, SourceLocation)]) -> ~[json::Json] {
+    list.map(|tuple| {
+        match *tuple {
+            (ref c, _) => c.to_json()
+        }
+    })
+}
