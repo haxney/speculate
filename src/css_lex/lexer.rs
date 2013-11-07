@@ -1,20 +1,20 @@
 use std::{char, str, num};
 use std::ascii::StrAsciiExt;
 
-#[deriving(Eq)]
+#[deriving(Eq, Clone)]
 pub struct NumericValue {
     representation: ~str,
     value: f64,
     int_value: Option<i64>,
 }
 
-#[deriving(Eq)]
+#[deriving(Eq, Clone)]
 pub struct SourceLocation {
     line: uint,  // First line is 1
     column: uint,  // First character of a line is at column 1
 }
 
-#[deriving(Eq)]
+#[deriving(Eq, Clone)]
 pub enum Token {
     Ident(~str),
     Function(~str),
