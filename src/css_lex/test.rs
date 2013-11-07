@@ -11,7 +11,7 @@ fn almost_equals(a: &json::Json, b: &json::Json) -> bool {
         (&json::String(ref a), &json::String(ref b)) => a == b,
         (&json::Boolean(a), &json::Boolean(b)) => a == b,
         (&json::List(ref a), &json::List(ref b))
-            => a.iter().zip(b.iter()).all(|(ref a, ref b)| almost_equals(*a, *b)),
+            => a.len() == b.len() && a.iter().zip(b.iter()).all(|(ref a, ref b)| almost_equals(*a, *b)),
         (&json::Object(_), &json::Object(_)) => fail!(~"Not implemented"),
         (&json::Null, &json::Null) => true,
         _ => false,
@@ -32,7 +32,9 @@ fn run_json_tests<T: ToJson>(json_data: &str, parse: &fn (input: ~str) -> T) {
                 let css = input.take_unwrap();
                 let result = parse(css.to_owned()).to_json();
                 if !almost_equals(&result, &expected) {
-                    fail!(css);
+                    fail!(format!("got: {}\nexpected: {}",
+                                  result.to_str(),
+                                  expected.to_str()));
                 }
             },
             _ => fail!("Unexpected JSON")
