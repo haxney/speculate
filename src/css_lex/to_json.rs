@@ -4,6 +4,19 @@ use std::str;
 
 use lexer::*;
 
+pub fn json_almost_equals(a: &json::Json, b: &json::Json) -> bool {
+    match (a, b) {
+        (&json::Number(a), &json::Number(b)) => (a - b).abs() < 1e-6,
+        (&json::String(ref a), &json::String(ref b)) => a == b,
+        (&json::Boolean(a), &json::Boolean(b)) => a == b,
+        (&json::List(ref a), &json::List(ref b))
+            => a.len() == b.len() && a.iter().zip(b.iter()).all(|(ref a, ref b)| json_almost_equals(*a, *b)),
+        (&json::Object(_), &json::Object(_)) => fail!(~"Not implemented"),
+        (&json::Null, &json::Null) => true,
+        _ => false,
+    }
+}
+
 impl ToJson for Token {
     fn to_json(&self) -> json::Json {
         use JList = extra::json::List;
@@ -69,6 +82,14 @@ impl ToJson for Token {
             LeftCurlyBracket => JString(~"{"),
             RightCurlyBracket => JString(~"}"),
         }
+    }
+}
+
+impl ToJson for SourceLocation {
+    fn to_json(&self) -> json::Json {
+        use JList = extra::json::List;
+
+        JList(~[self.line.to_json(), self.column.to_json()])
     }
 }
 

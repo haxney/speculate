@@ -5,19 +5,6 @@ use extra::json;
 use extra::json::ToJson;
 use css_lex::*;
 
-fn almost_equals(a: &json::Json, b: &json::Json) -> bool {
-    match (a, b) {
-        (&json::Number(a), &json::Number(b)) => (a - b).abs() < 1e-6,
-        (&json::String(ref a), &json::String(ref b)) => a == b,
-        (&json::Boolean(a), &json::Boolean(b)) => a == b,
-        (&json::List(ref a), &json::List(ref b))
-            => a.len() == b.len() && a.iter().zip(b.iter()).all(|(ref a, ref b)| almost_equals(*a, *b)),
-        (&json::Object(_), &json::Object(_)) => fail!(~"Not implemented"),
-        (&json::Null, &json::Null) => true,
-        _ => false,
-    }
-}
-
 fn run_json_tests<T: ToJson>(json_data: &str, parse: &fn (input: ~str) -> T) {
     let items = match json::from_str(json_data) {
         Ok(json::List(items)) => items,
@@ -31,7 +18,7 @@ fn run_json_tests<T: ToJson>(json_data: &str, parse: &fn (input: ~str) -> T) {
             (&Some(_), expected) => {
                 let css = input.take_unwrap();
                 let result = parse(css.to_owned()).to_json();
-                if !almost_equals(&result, &expected) {
+                if !json_almost_equals(&result, &expected) {
                     fail!(format!("got: {}\nexpected: {}",
                                   result.to_str(),
                                   expected.to_str()));
