@@ -1,5 +1,6 @@
 use std::{char, str, num};
 use std::ascii::StrAsciiExt;
+use extra::arc::Arc;
 
 #[deriving(Eq, Clone)]
 pub struct NumericValue {
@@ -54,7 +55,7 @@ pub type Node = (Token, SourceLocation);
 
 pub struct Tokenizer {
     // Won't be able to be an owned pointer, since will be shared across tasks
-    input: ~str,
+    input: Arc<~str>,
     length: uint,
     position: uint,
     line: uint,
@@ -62,6 +63,19 @@ pub struct Tokenizer {
 }
 
 impl Tokenizer {
+    /**
+     * Assumes `input` has already been preprocessed.
+     */
+    pub fn new(input: Arc<~str>) -> Tokenizer {
+        Tokenizer {
+            length: input.get().len(),
+            input: input,
+            position: 0,
+            line: 1,
+            last_line_start: 0,
+        }
+    }
+
     #[inline]
     fn is_eof(&self) -> bool { self.position >= self.length }
 
@@ -71,25 +85,25 @@ impl Tokenizer {
 
     #[inline]
     fn char_at(&self, offset: uint) -> char {
-        self.input.char_at(self.position + offset)
+        self.input.get().char_at(self.position + offset)
     }
 
     #[inline]
     fn consume_char(&mut self) -> char {
-        let range = self.input.char_range_at(self.position);
+        let range = self.input.get().char_range_at(self.position);
         self.position = range.next;
         range.ch
     }
 
     #[inline]
     fn starts_with(&self, needle: &str) -> bool {
-        self.input.slice_from(self.position).starts_with(needle)
+        self.input.get().slice_from(self.position).starts_with(needle)
     }
 
     #[inline]
     fn new_line(&mut self) {
         if cfg!(test) {
-            assert!(self.input.char_at(self.position - 1) == '\n')
+            assert!(self.input.get().char_at(self.position - 1) == '\n')
         }
         self.line += 1;
         self.last_line_start = self.position;
@@ -104,7 +118,7 @@ pub fn tokenize(input: &str) -> Tokenizer {
     let input = preprocess(input);
     Tokenizer {
         length: input.len(),
-        input: input,
+        input: Arc::new(input),
         position: 0,
         line: 1,
         last_line_start: 0,
@@ -117,8 +131,7 @@ impl Iterator<Node> for Tokenizer {
 }
 
 // From http://dev.w3.org/csswg/css-syntax/#input-preprocessing
-#[inline]
-fn preprocess(input: &str) -> ~str {
+pub fn preprocess(input: &str) -> ~str {
     // TODO: Is this faster if done in one pass?
     input.replace("\r\n", "\n").replace("\r", "\n").replace("\x0C", "\n").replace("\x00", "\uFFFD")
 }
@@ -347,7 +360,7 @@ fn is_ident_start(tokenizer: &mut Tokenizer) -> bool {
         'a'..'z' | 'A'..'Z' | '_' => true,
         '-' => tokenizer.has_more(1) && match tokenizer.char_at(1) {
             'a'..'z' | 'A'..'Z' | '_' => true,
-            '\\' => !tokenizer.input.slice_from(tokenizer.position + 1).starts_with("\\\n"),
+            '\\' => !tokenizer.input.get().slice_from(tokenizer.position + 1).starts_with("\\\n"),
             c => c > '\x7F',  // Non-ASCII
         },
         '\\' => !tokenizer.starts_with("\\\n"),
