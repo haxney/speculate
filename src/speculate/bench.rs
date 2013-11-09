@@ -36,8 +36,6 @@ fn bench_spec_correct_2048(b: &mut test::BenchHarness) {
                 local_arc.get().iter().fold(x, |old, new| old + *new)
             });
     }
-
-
 }
 
 #[bench]
@@ -61,8 +59,6 @@ fn bench_spec_wrong_2048(b: &mut test::BenchHarness) {
                 local_arc.get().iter().fold(x, |old, new| old + *new)
             });
     }
-
-
 }
 
 
@@ -95,8 +91,6 @@ fn bench_spec_correct_4096(b: &mut test::BenchHarness) {
                 local_arc.get().iter().fold(x, |old, new| old + *new)
             });
     }
-
-
 }
 
 #[bench]
@@ -120,6 +114,4 @@ fn bench_spec_wrong_4096(b: &mut test::BenchHarness) {
                 local_arc.get().iter().fold(x, |old, new| old + *new)
             });
     }
-
-
 }
