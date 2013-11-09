@@ -46,18 +46,15 @@ fn test_next_token_start() {
 }
 
 #[test]
-fn test_specfold_correct_prediction() {
-    let css = ~"cls1 : cls2 {prop: val;}";
-    assert!(spec_tokenize(css, 3).map(|n| match *n { (ref t, _) => t.clone() })
-            == ~[Ident(~"cls1"), WhiteSpace, Colon, WhiteSpace,
-                 Ident(~"cls2"), WhiteSpace, LeftCurlyBracket,
-                 Ident(~"prop"), Colon, WhiteSpace,
-                 Ident(~"val"), Semicolon, RightCurlyBracket])
-}
-
-#[test]
 fn test_spec_token_json() {
+    // Test different number of parallel tasks
+    do run_json_tests(include_str!("../css_lex/css-lexing-tests/tokens.json")) |input| {
+        list_to_json(&spec_tokenize(input, 1))
+    }
     do run_json_tests(include_str!("../css_lex/css-lexing-tests/tokens.json")) |input| {
         list_to_json(&spec_tokenize(input, 2))
+    }
+    do run_json_tests(include_str!("../css_lex/css-lexing-tests/tokens.json")) |input| {
+        list_to_json(&spec_tokenize(input, 3))
     }
 }

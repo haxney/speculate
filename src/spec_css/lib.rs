@@ -9,6 +9,7 @@ use speculate::*;
 use std::{num, task, vec};
 use std::comm::{SharedPort, SharedChan, stream};
 use extra::arc::Arc;
+use extra::json::ToJson;
 
 static LOOKBACK: uint = 10;
 
@@ -21,16 +22,25 @@ static LOOKBACK: uint = 10;
  * `i`-th result vector. If the message is `Some(i, Some(t))`, then add `t` to
  * the `i`-th result vector.
  */
-fn spawn_result_collector<T: Send + Clone>(port: SharedPort<Option<(int, Option<T>)>>, chan: Chan<~[T]>, size: uint) {
+fn spawn_result_collector<T: Send + Clone + ToJson>(port: SharedPort<Option<(int, Option<T>)>>, chan: Chan<~[T]>, size: uint) {
     do task::spawn {
         let mut results = vec::from_elem::<~[T]>(size, Default::default());
         loop {
             match port.recv() {
-                Some((idx, Some(val))) => results[idx].push(val),
-                Some((idx, None)) => results[idx].clear(),
+                Some((idx, Some(val))) => {
+                    println!("\tworker {}: {}", idx, val.to_json().to_str());
+                    results[idx].push(val);
+                },
+                Some((idx, None)) => {
+                    if results[idx].len() > 0 {
+                        println!("\tworker {}: clear", idx);
+                    }
+                    results[idx].clear();
+                },
                 None => break
             }
         }
+        println!("Results");
         chan.send(results.flat_map(|v| v.clone()));
     }
 }
@@ -54,8 +64,9 @@ pub fn spec_tokenize(input: ~str, num_iters: uint) -> ~[Node] {
     let input = preprocess(input);
     let css_len = input.len();
     let str_arc = Arc::new(input);
-    let iter_size: uint = css_len / num_iters;
-    let (port, chan): (Port<Option<(int, Option<Node>)>>, Chan<Option<(int, Option<Node>)>>) = stream();
+    let iter_size: uint = (css_len + num_iters - 1) / num_iters; // round up
+    let (port, chan): (Port<Option<(int, Option<Node>)>>,
+                       Chan<Option<(int, Option<Node>)>>) = stream();
     let (res_port, res_chan) = stream();
     let body_chan = SharedChan::new(chan);
     let body_port = SharedPort::new(port);
@@ -68,7 +79,15 @@ pub fn spec_tokenize(input: ~str, num_iters: uint) -> ~[Node] {
         |idx:int, token_start:uint| {
             // exclusive bound
             let upper = num::min((idx as uint + 1) * iter_size, css_len);
-            let mut tokenizer = Tokenizer::new(arc_port.recv());
+            let string = arc_port.recv();
+            println!("worker {}: token_start = {}, upper = {}, str.len() = {}, str = '{}'",
+                     idx,
+                     token_start,
+                     upper,
+                     css_len,
+                     string.get().escape_default());
+
+            let mut tokenizer = Tokenizer::new(string);
             tokenizer.position = token_start;
 
             // Reset the vector for this loop iteration
@@ -79,6 +98,7 @@ pub fn spec_tokenize(input: ~str, num_iters: uint) -> ~[Node] {
                     None => break
                 }
             }
+            println!("worker {}: ending position = {}", idx, tokenizer.position);
             tokenizer.position
         }
     };
