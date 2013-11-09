@@ -1,11 +1,11 @@
-extern mod cssparser;
+extern mod css_lex;
 extern mod extra;
-extern mod servo_style;
+extern mod spec_css;
 
 use std::io::file_reader;
 use std::cell::Cell;
-use std::task;
-use cssparser::*;
+use std::{task, os, from_str};
+use css_lex::*;
 use extra::time::precise_time_ns;
 
 fn bench(inner: &fn()) -> u64 {
@@ -16,25 +16,27 @@ fn bench(inner: &fn()) -> u64 {
     return ns_end - ns_start;
 }
 
-fn bench_lex_one_file(path: Path) -> Result<u64, ()> {
+fn seq_tokenize(path: Path) -> Result<u64, ()> {
     let p = Cell::new(path);
     do task::try {
         let reader = file_reader(&p.take()).unwrap();
         let css = reader.read_c_str();
         do bench {
-            let mut a = parse_stylesheet_rules(tokenize(css));
+            let mut a = tokenize(css);
             for _ in a {}
         }
     }
 }
 
-fn bench_parse_one_file(path: Path) -> Result<u64, ()> {
+fn par_tokenize(path: Path) -> Result<u64, ()> {
     let p = Cell::new(path);
     do task::try {
         let reader = file_reader(&p.take()).unwrap();
         let css = reader.read_c_str();
+        let c = Cell::new(css);
         do bench {
-            servo_style::stylesheets::parse_stylesheet(css);
+            spec_css::spec_tokenize(c.take(),
+                                    from_str::from_str(os::args()[1]).unwrap_or(4));
         }
     }
 }
@@ -42,16 +44,16 @@ fn bench_parse_one_file(path: Path) -> Result<u64, ()> {
 fn main() {
     let base_dir = &Path("sample-data");
     let files = std::os::list_dir_path(base_dir);
-    println!("name,lex,parse,size");
+    println!("name,seq,par,size");
 
     for file in files.iter() {
-        let lex_time = bench_lex_one_file(file.clone());
-        let parse_time = bench_parse_one_file(file.clone());
-        match (lex_time, parse_time) {
-            (Ok(l), Ok(p)) =>
+        let seq_time = seq_tokenize(file.clone());
+        let par_time = par_tokenize(file.clone());
+        match (seq_time, par_time) {
+            (Ok(s), Ok(p)) =>
                 println!("{},{:.4f},{:.4f},{}",
                          file.filename().unwrap(),
-                         l as float / 1_000f,
+                         s as float / 1_000f,
                          p as float / 1_000f,
                          file.get_size().unwrap()),
             _ => (),
