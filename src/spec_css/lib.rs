@@ -21,7 +21,7 @@ static LOOKBACK: uint = 10;
  * `i`-th result vector. If the message is `Some(i, Some(t))`, then add `t` to
  * the `i`-th result vector.
  */
-fn spawn_result_collector<T: Send + Clone>(port: SharedPort<Option<(int, Option<~[T]>)>>,
+fn spawn_result_collector<T: Send + Clone>(port: SharedPort<Option<(uint, Option<~[T]>)>>,
                                            chan: Chan<~[T]>,
                                            size: uint) {
     do task::spawn {
@@ -57,20 +57,20 @@ pub fn spec_tokenize(input: ~str, num_iters: uint) -> ~[Node] {
     let css_len = input.len();
     let str_arc = Arc::new(input);
     let iter_size: uint = (css_len + num_iters - 1) / num_iters; // round up
-    let (port, chan): (Port<Option<(int, Option<~[Node]>)>>,
-                       Chan<Option<(int, Option<~[Node]>)>>) = stream();
+    let (port, chan): (Port<Option<(uint, Option<~[Node]>)>>,
+                       Chan<Option<(uint, Option<~[Node]>)>>) = stream();
     let (res_port, res_chan) = stream();
     let body_chan = SharedChan::new(chan);
     let body_port = SharedPort::new(port);
 
-    let loop_body: &fn() -> ~fn(int, uint) -> uint = || {
+    let loop_body: &fn() -> ~fn(uint, uint) -> uint = || {
         let (arc_port, arc_chan) = stream();
         arc_chan.send(str_arc.clone());
         let local_body_chan = body_chan.clone();
 
-        |idx:int, token_start:uint| {
+        |idx:uint, token_start:uint| {
             // exclusive bound
-            let upper = num::min((idx as uint + 1) * iter_size, css_len);
+            let upper = num::min((idx + 1) * iter_size, css_len);
             let string = arc_port.recv();
             let mut tokenizer = Tokenizer::new(string);
             tokenizer.position = token_start;
@@ -89,16 +89,16 @@ pub fn spec_tokenize(input: ~str, num_iters: uint) -> ~[Node] {
         }
     };
 
-    let predictor: &fn() -> ~fn(int) -> uint = || {
+    let predictor: &fn() -> ~fn(uint) -> uint = || {
         let (arc_port, arc_chan) = stream();
         arc_chan.send(str_arc.clone());
         |idx| {
-            next_token_start(arc_port.recv(), idx as uint * iter_size)
+            next_token_start(arc_port.recv(), idx * iter_size)
         }
     };
 
     spawn_result_collector(body_port.clone(), res_chan, num_iters);
-    specfold(0, num_iters as int, loop_body, predictor);
+    specfold(num_iters, loop_body, predictor);
     body_chan.send(None);
     res_port.recv()
 }
