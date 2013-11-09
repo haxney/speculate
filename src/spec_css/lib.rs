@@ -21,19 +21,19 @@ static LOOKBACK: uint = 10;
  * `i`-th result vector. If the message is `Some(i, Some(t))`, then add `t` to
  * the `i`-th result vector.
  */
-fn spawn_result_collector<T: Send + Clone>(port: SharedPort<Option<(int, Option<T>)>>,
+fn spawn_result_collector<T: Send + Clone>(port: SharedPort<Option<(int, Option<~[T]>)>>,
                                            chan: Chan<~[T]>,
                                            size: uint) {
     do task::spawn {
         let mut results = vec::from_elem::<~[T]>(size, Default::default());
         loop {
             match port.recv() {
-                Some((idx, Some(val))) => results[idx].push(val),
+                Some((idx, Some(val))) => results[idx] = val,
                 Some((idx, None)) => results[idx].clear(),
                 None => break
             }
         }
-        chan.send(results.flat_map(|v| v.clone()));
+        chan.send(results.move_iter().flat_map(|v| v.move_iter()).to_owned_vec());
     }
 }
 
@@ -57,8 +57,8 @@ pub fn spec_tokenize(input: ~str, num_iters: uint) -> ~[Node] {
     let css_len = input.len();
     let str_arc = Arc::new(input);
     let iter_size: uint = (css_len + num_iters - 1) / num_iters; // round up
-    let (port, chan): (Port<Option<(int, Option<Node>)>>,
-                       Chan<Option<(int, Option<Node>)>>) = stream();
+    let (port, chan): (Port<Option<(int, Option<~[Node]>)>>,
+                       Chan<Option<(int, Option<~[Node]>)>>) = stream();
     let (res_port, res_chan) = stream();
     let body_chan = SharedChan::new(chan);
     let body_port = SharedPort::new(port);
@@ -74,15 +74,17 @@ pub fn spec_tokenize(input: ~str, num_iters: uint) -> ~[Node] {
             let string = arc_port.recv();
             let mut tokenizer = Tokenizer::new(string);
             tokenizer.position = token_start;
+            let mut results: ~[Node] = vec::with_capacity(10); // arbitrary starting number
 
             // Reset the vector for this loop iteration
             local_body_chan.send(Some((idx, None)));
             while tokenizer.position < upper {
                 match tokenizer.next() {
-                    Some(node) => local_body_chan.send(Some((idx, Some(node)))),
+                    Some(node) => results.push(node),
                     None => break
                 }
             }
+            local_body_chan.send(Some((idx, Some(results))));
             tokenizer.position
         }
     };
