@@ -46,13 +46,17 @@ pub fn specfold<A: Eq + Clone + Send>(low: int, high: int,
         results.push(fut);
     }
 
+    // Wait for the first result. This is necessary in the case that `len` is 1,
+    // since then the validation loop will not run.
+    results[0].get_ref();
+
     // Validate. Sequentially, for now
-    for i in range(low + 1, high) {
-        let (_, previous) = results[(i - low) - 1].get();
-        let (prediction, _) = results[i - low].get();
+    for i in range(1, len) {
+        let (_, previous) = results[i - 1].get();
+        let (prediction, _) = results[i].get();
         if previous != prediction {
-            let res = loop_body()(i, previous.clone());
-            results[i - low] = Future::from_value((previous, res));
+            let res = loop_body()(i as int, previous.clone());
+            results[i] = Future::from_value((previous, res));
         }
     }
 }
