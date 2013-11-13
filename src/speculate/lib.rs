@@ -46,7 +46,7 @@ pub fn specfold<A: Eq + Clone + Send>(iters: uint,
 
     // Wait for the first result. This is necessary in the case that `iters` is
     // 1, since then the validation loop will not run.
-    results[0].get_ref();
+    if iters == 1 { results[0].get_ref(); }
 
     // Validate. Sequentially, for now
     for i in range(1, iters) {
