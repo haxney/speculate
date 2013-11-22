@@ -4,6 +4,11 @@ extern mod extra;
 
 use extra::future::Future;
 
+pub struct SpecStats {
+    iters: uint,
+    mispredictions: ~[bool]
+}
+
 /**
  * Speculatively execute consumer using the guessed value.
  */
@@ -31,10 +36,12 @@ pub fn spec<A: Eq + Send + Clone, B>(producer: ~fn() -> A,
  */
 pub fn specfold<A: Eq + Clone + Send>(iters: uint,
                                       loop_body: &fn() -> ~fn(uint, A) -> A,
-                                      predictor: &fn() -> ~fn(uint) -> A) {
+                                      predictor: &fn() -> ~fn(uint) -> A) -> SpecStats {
 
     // The future is (prediction, result)
     let mut results: ~[Future<(A, A)>] = std::vec::with_capacity(iters);
+    let mut stats = SpecStats { iters: iters,
+                                mispredictions: std::vec::from_elem(iters, false) };
     for i in range(0, iters) {
         let fut = do Future::spawn_with((predictor(), loop_body())) |(p,l)| {
             let prediction = p(i);
@@ -53,8 +60,10 @@ pub fn specfold<A: Eq + Clone + Send>(iters: uint,
         let (_, previous) = results[i - 1].get();
         let (prediction, _) = results[i].get();
         if previous != prediction {
+            stats.mispredictions[i] = true;
             let res = loop_body()(i, previous.clone());
             results[i] = Future::from_value((previous, res));
         }
     }
+    stats
 }

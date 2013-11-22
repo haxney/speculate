@@ -52,7 +52,7 @@ pub fn next_token_start(input: Arc<~str>, start: uint) -> uint {
     tokenizer.position
 }
 
-pub fn spec_tokenize(input: ~str, num_iters: uint) -> ~[Node] {
+pub fn spec_tokenize(input: ~str, num_iters: uint) -> (SpecStats, ~[Node]) {
     let input = preprocess(input);
     let css_len = input.len();
     let str_arc = Arc::new(input);
@@ -98,7 +98,7 @@ pub fn spec_tokenize(input: ~str, num_iters: uint) -> ~[Node] {
     };
 
     spawn_result_collector(body_port.clone(), res_chan, num_iters);
-    specfold(num_iters, loop_body, predictor);
+    let res = specfold(num_iters, loop_body, predictor);
     body_chan.send(None);
-    res_port.recv()
+    (res, res_port.recv())
 }
