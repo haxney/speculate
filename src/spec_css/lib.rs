@@ -47,7 +47,11 @@ fn spawn_result_collector<T: Send + Clone>(port: SharedPort<Option<(uint, Option
  */
 pub fn next_token_start(input: Arc<~str>, start: uint) -> uint {
     let mut tokenizer = Tokenizer::new(input);
-    tokenizer.position = if start < LOOKBACK {0} else {start - LOOKBACK};
+    tokenizer.position = if start < LOOKBACK {
+        0
+    } else {
+        num::min(start - LOOKBACK, tokenizer.length)
+    };
     while tokenizer.position < start && tokenizer.next().is_some() {}
     tokenizer.position
 }
